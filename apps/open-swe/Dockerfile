@@ -22,14 +22,14 @@ RUN test -f apps/open-swe/.env || touch apps/open-swe/.env
 # Install dependencies for all workspaces with the repo-pinned Yarn version
 RUN yarn install --immutable
 
-# Expose dev server port for the LangGraph agent
-EXPOSE 2024
+# Document port; Cloud Run sets PORT dynamically (usually 8080)
+EXPOSE 8080
 
 # Environment can be overridden at runtime
 ENV PORT=2024
 
-# Default command runs the dev server for the agent
+# Default command runs the agent binding to Cloud Run PORT
 WORKDIR /app/apps/open-swe
-CMD ["yarn", "dev"]
+CMD ["yarn", "start"]
 
 
