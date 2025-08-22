@@ -340,6 +340,10 @@ jobs:
         run: |
           IMAGE_REF="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/open-swe/open-swe-web:sha-${GITHUB_SHA}"
           PK_ESC=$(printf '%s' "${{ secrets.GH_APP_PRIVATE_KEY }}")
+          # Build-time public envs for Next.js
+          export NEXT_PUBLIC_API_URL="${{ vars.NEXT_PUBLIC_API_URL }}"
+          export LANGGRAPH_API_URL="${{ vars.LANGGRAPH_API_URL }}"
+          export NEXT_PUBLIC_GITHUB_APP_CLIENT_ID="${{ vars.NEXT_PUBLIC_GITHUB_APP_CLIENT_ID }}"
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             --image "$IMAGE_REF" \
             --region "$GCP_REGION" \

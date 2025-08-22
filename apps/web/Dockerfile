@@ -20,8 +20,15 @@ RUN yarn install --immutable
 
 # Build Next.js for production to reduce runtime memory and startup cost
 WORKDIR /app/apps/web
+# Inject public runtime config at build time so client bundle has URLs
+ARG NEXT_PUBLIC_API_URL
+ARG LANGGRAPH_API_URL
+ARG NEXT_PUBLIC_GITHUB_APP_CLIENT_ID
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV LANGGRAPH_API_URL=${LANGGRAPH_API_URL}
+ENV NEXT_PUBLIC_GITHUB_APP_CLIENT_ID=${NEXT_PUBLIC_GITHUB_APP_CLIENT_ID}
 RUN yarn build
 
 EXPOSE 8080
