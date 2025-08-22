@@ -51,13 +51,37 @@ jobs:
               - 'yarn.lock'
               - 'turbo.json'
 
+  tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    concurrency:
+      group: tests-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Node.js 18.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+          cache: "yarn"
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+      - name: Build project
+        run: yarn build
+      - name: Run tests
+        run: yarn test
+
   build-agent:
-    needs: changes
+    needs: [changes, tests]
     if: needs.changes.outputs.agent == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: docker-agent-${{ github.ref }}
       cancel-in-progress: true
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -96,6 +120,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -107,12 +132,14 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-web:
-    needs: changes
+    needs: [changes, tests]
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: docker-web-${{ github.ref }}
       cancel-in-progress: true
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -151,6 +178,7 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -160,5 +188,69 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-agent:
+    needs: [changes, build-agent]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.agent == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-agent-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      CLOUD_RUN_SERVICE: open-swe-agent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+      - name: Deploy to Cloud Run (agent)
+        run: |
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/open-swe-agent@${{ needs.build-agent.outputs.digest }}"
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --image "$IMAGE_REF" \
+            --region "$GCP_REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars OPEN_SWE_APP_URL=${{ vars.OPEN_SWE_APP_URL }},LANGCHAIN_PROJECT=${{ vars.LANGCHAIN_PROJECT || 'default' }},LANGCHAIN_TRACING_V2=${{ vars.LANGCHAIN_TRACING_V2 || 'true' }},LANGCHAIN_TEST_TRACKING=${{ vars.LANGCHAIN_TEST_TRACKING || 'false' }},GITHUB_APP_ID=${{ vars.GH_APP_ID }},GITHUB_APP_NAME=${{ vars.GH_APP_NAME }},GITHUB_TRIGGER_USERNAME=${{ github.actor }},SKIP_CI_UNTIL_LAST_COMMIT=${{ vars.SKIP_CI_UNTIL_LAST_COMMIT }},LANGCHAIN_API_KEY=${{ secrets.LANGCHAIN_API_KEY }},ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }},DAYTONA_API_KEY=${{ secrets.DAYTONA_API_KEY }},FIRECRAWL_API_KEY=${{ secrets.FIRECRAWL_API_KEY }},GITHUB_APP_PRIVATE_KEY=${{ secrets.GH_APP_PRIVATE_KEY }},GITHUB_WEBHOOK_SECRET=${{ secrets.GH_WEBHOOK_SECRET }},SECRETS_ENCRYPTION_KEY=${{ secrets.SECRETS_ENCRYPTION_KEY }}
+
+  deploy-web:
+    needs: [changes, build-web]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-web-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      CLOUD_RUN_SERVICE: open-swe-web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+      - name: Deploy to Cloud Run (web)
+        run: |
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/open-swe-web@${{ needs.build-web.outputs.digest }}"
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --image "$IMAGE_REF" \
+            --region "$GCP_REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }},LANGGRAPH_API_URL=${{ vars.LANGGRAPH_API_URL }},NEXT_PUBLIC_GITHUB_APP_CLIENT_ID=${{ vars.NEXT_PUBLIC_GITHUB_APP_CLIENT_ID }},GITHUB_APP_NAME=${{ vars.GH_APP_NAME }},GITHUB_APP_ID=${{ vars.GH_APP_ID }},GITHUB_APP_REDIRECT_URI=${{ vars.GH_APP_REDIRECT_URI }},GITHUB_APP_CLIENT_SECRET=${{ secrets.GH_APP_CLIENT_SECRET }},SECRETS_ENCRYPTION_KEY=${{ secrets.SECRETS_ENCRYPTION_KEY }},GITHUB_APP_PRIVATE_KEY=${{ secrets.GH_APP_PRIVATE_KEY }}
 
 
