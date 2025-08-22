@@ -200,6 +200,10 @@ jobs:
           push: ${{ github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            LANGGRAPH_API_URL=${{ vars.LANGGRAPH_API_URL }}
+            NEXT_PUBLIC_GITHUB_APP_CLIENT_ID=${{ vars.NEXT_PUBLIC_GITHUB_APP_CLIENT_ID }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
