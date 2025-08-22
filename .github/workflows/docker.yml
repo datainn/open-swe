@@ -268,7 +268,7 @@ jobs:
             --region "$GCP_REGION" \
             --platform managed \
             --allow-unauthenticated \
-            --memory=1Gi \
+            --memory=2Gi \
             --timeout=300 \
             --set-env-vars OPEN_SWE_APP_URL="${{ vars.OPEN_SWE_APP_URL }}" \
             --set-env-vars LANGCHAIN_PROJECT="${{ vars.LANGCHAIN_PROJECT }}" \
